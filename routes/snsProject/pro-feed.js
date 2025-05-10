@@ -119,10 +119,12 @@ router.get("/:POST_ID", async (req, res) => {
     try {
         let sql = "SELECT * FROM PRO_POSTS WHERE POST_ID = " + POST_ID;
         let imgSql = "SELECT * FROM PRO_POSTS_IMG WHERE POST_ID = " + POST_ID;
-        let commSql = "SELECT COMMENT_ID,POST_ID,C.USER_EMAIL,CONTENT,USER_NAME,NICK_NAME,PROFILE_IMG,C.CDATE_TIME "
-            + "FROM pro_comment C "
-            + "INNER JOIN pro_users U ON C.USER_EMAIL = U.USER_EMAIL "
-            + "WHERE POST_ID = " + POST_ID;
+        let commSql =
+            "SELECT COMMENT_ID, POST_ID, C.USER_EMAIL, CONTENT, USER_NAME, NICK_NAME, PROFILE_IMG, C.CDATE_TIME, PARENT_ID " +
+            "FROM pro_comment C " +
+            "INNER JOIN pro_users U ON C.USER_EMAIL = U.USER_EMAIL " +
+            "WHERE POST_ID = " + POST_ID +
+            " ORDER BY COMMENT_ID ASC";
         let [list] = await db.query(sql);
         let [imgList] = await db.query(imgSql);
         let [commList] = await db.query(commSql);
@@ -138,22 +140,33 @@ router.get("/:POST_ID", async (req, res) => {
     }
 })
 
-////// 댓글 등록 필요
-// router.post("/", async (req, res) => {  // 같은 주소지지만 post, get이냐에 따라 다르게 호출
-//     let { email, title, type, content } = req.body;
-//     try {
-//         let query = "INSERT INTO pro_comment VALUES (NULL,?,?,?,NOW())"; // 댓글 쿼리문 완성
-//         let result = await db.query(query, [email, title, type, content])
-//         console.log("result====>", result);
-//         res.json({
-//             message: "result",
-//             result: result[0]
-//         }); // 5
-//     } catch (err) {
-//         console.log("에러 발생!(댓글 하기)");
-//         res.status(500).send("Server Error");
-//     }
-// })
+// 댓글 등록
+router.post("/comment", async (req, res) => {
+    let { postId, email, comment, parentId } = req.body;
+
+    try {
+        let query =
+            "INSERT INTO pro_comment " +
+            "(POST_ID, USER_EMAIL, CONTENT, CDATE_TIME, PARENT_ID) " +
+            "VALUES (?, ?, ?, NOW(), ?)";
+
+        let result = await db.query(query, [
+            postId,
+            email,
+            comment,
+            parentId || null // 대댓글이 아니면 null로 처리
+        ]);
+
+        res.json({
+            message: "댓글이 작성되었습니다.",
+            result: result[0]
+        });
+
+    } catch (err) {
+        console.log("에러 발생!(댓글 하기)", err);
+        res.status(500).send("Server Error");
+    }
+});
 
 
 
