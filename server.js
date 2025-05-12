@@ -5,6 +5,7 @@ const feedRouter = require('./routes/feed') // A. routes 내의 product.js 쓰�
 const snsFeed = require('./routes/sns/feed')
 const proUserRouter = require('./routes/snsProject/pro-user')
 const proFeedRouter = require('./routes/snsProject/pro-feed')
+const proLikeRouter = require('./routes/snsProject/pro-like')
 const path = require('path');
 
 // 추가 1. 서버 종료 후 npm i cors 로 패키지 설치
@@ -34,6 +35,8 @@ app.use("/feed", feedRouter);//B. 참조용으로 선언
 app.use("/sns-feed", snsFeed);
 app.use("/pro-user", proUserRouter);
 app.use("/pro-feed", proFeedRouter);
+app.use("/pro-like", proLikeRouter);
+
 
 
 

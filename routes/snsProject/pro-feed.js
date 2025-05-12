@@ -60,22 +60,6 @@ router.post("/", async (req, res) => {  // 같은 주소지지만 post, get이�
 
 
 
-router.delete("/:id", authMiddleware, async (req, res) => {
-    let { id } = req.params;
-    try {
-        let result = await db.query("DELETE FROM TBL_FEED WHERE ID=" + id);
-        res.json({
-            message: "result",
-            result: result
-
-        }); // 5
-    } catch (err) {
-        console.log("에러 발생!(삭제)");
-        res.status(500).send("Server Error");
-    }
-})
-
-
 
 router.get("/list", async (req, res) => {
     try {
@@ -166,6 +150,29 @@ router.post("/comment", async (req, res) => {
         console.log("에러 발생!(댓글 하기)", err);
         res.status(500).send("Server Error");
     }
+});
+
+// 게시글 삭제
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  console.log('포스트 넘버',id);
+
+  try {
+    // 1. 게시글 이미지 삭제 (선택사항: 실제 파일 삭제는 별도로 구현 가능)
+    await db.query('DELETE FROM PRO_POSTS_IMG WHERE POST_ID = ?', [id]);
+
+    // 2. 게시글 자체 삭제
+    const [result] = await db.query('DELETE FROM PRO_POSTS WHERE POST_ID = ?', [id]);
+
+    if (result.affectedRows > 0) {
+      res.json({ success: true, message: '게시글이 삭제되었습니다.' });
+    } else {
+      res.json({ success: false, message: '삭제할 게시글을 찾을 수 없습니다.' });
+    }
+  } catch (err) {
+    console.error('게시글 삭제 오류:', err.message);
+    res.status(500).send('Server Error');
+  }
 });
 
 

@@ -63,6 +63,66 @@ router.post("/", async (req, res) => {  // 같은 주소지지만 post, get이�
     }
 })
 
+//마이페이지 통계
+router.get("/mypage-stat", async (req, res) => {
+  const { email } = req.query;
+
+  try {
+    const [result] = await db.query(
+      "SELECT " +
+      "(SELECT COUNT(*) FROM PRO_FOLLOW WHERE FOLLOWING_EMAIL = ? AND CANCEL_YN = 'N') AS following_count, " +
+      "(SELECT COUNT(*) FROM PRO_FOLLOW WHERE FOLLOWED_EMAIL = ? AND CANCEL_YN = 'N') AS follower_count, " +
+      "(SELECT COUNT(*) FROM PRO_POSTS WHERE USER_EMAIL = ?) AS post_count",
+      [email, email, email]
+    );
+
+    res.json({
+      message: "mypage stats",
+      follower_count: result[0].follower_count,
+      following_count: result[0].following_count,
+      post_count: result[0].post_count
+    });
+
+  } catch (err) {
+    console.error("마이페이지 통계 에러:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+
+router.get("/posts", async (req, res) => {
+  const { email } = req.query;
+
+  try {
+    const [posts] = await db.query(`
+      SELECT P.POST_ID,
+        P.POST_TITLE,
+        P.POST_CONTENT,
+        P.CDATE_TIME,
+        P.POST_TYPE,
+        I.IMG_NAME,
+        I.IMG_PATH
+      FROM PRO_POSTS P
+      LEFT JOIN PRO_POSTS_IMG I 
+        ON P.POST_ID = I.POST_ID 
+        AND I.THUMBNAIL_YN = 'Y'
+      WHERE P.USER_EMAIL = ?
+      ORDER BY P.CDATE_TIME DESC
+    `, [email]);
+
+    res.json({
+      message: "user posts",
+      posts: posts
+    });
+
+  } catch (err) {
+    console.error("게시글 목록 조회 에러:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+
+
 router.get("/:email", async (req, res) => { // :productId 동적으로 처리하기
     let { email } = req.params;
 
