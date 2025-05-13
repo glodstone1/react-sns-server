@@ -1,27 +1,25 @@
 const express = require('express')
 const db = require('../../db')
 const router = express.Router();
-const authMiddleware = require('../auth'); // 중간에서 토큰 검증하는 함수
-
-// 1. 패키지 추가
+const authMiddleware = require('../auth');
 const multer = require('multer');
 
-// 2. 저장 경로 및 파일명
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
 });
 const upload = multer({ storage });
 
-// 3. api 호출
+// ✅ 이미지 업로드 시 이전 썸네일 초기화
 router.post('/upload', upload.array('file'), async (req, res) => {
     let { feedId } = req.body;
     const files = req.files;
-    // const filename = req.file.filename; 
-    // const destination = req.file.destination; 
     try {
         let results = [];
         let thumbnail = "Y";
+
+        await db.query("UPDATE PRO_POSTS_IMG SET THUMBNAIL_YN = 'N' WHERE POST_ID = ?", [feedId]);
+
         for (let file of files) {
             let filename = file.filename;
             let destination = file.destination;
@@ -30,10 +28,7 @@ router.post('/upload', upload.array('file'), async (req, res) => {
             results.push(result);
             thumbnail = "N";
         }
-        res.json({
-            message: "result",
-            result: results
-        });
+        res.json({ message: "result", result: results });
 
     } catch (err) {
         console.log("에러 발생!(업로드)");
@@ -41,54 +36,33 @@ router.post('/upload', upload.array('file'), async (req, res) => {
     }
 });
 
-
-router.post("/", async (req, res) => {  // 같은 주소지지만 post, get이냐에 따라 다르게 호출
+router.post("/", async (req, res) => {
     let { email, title, type, content } = req.body;
     try {
-        let query = "INSERT INTO PRO_POSTS VALUES (NULL,?,?,?,?,NOW(),NULL)"; // 4 ,6 list에 [] 붙이고 await 써주기
+        let query = "INSERT INTO PRO_POSTS VALUES (NULL,?,?,?,?,NOW(),NULL)";
         let result = await db.query(query, [email, title, type, content])
-        console.log("result====>", result);
-        res.json({
-            message: "result",
-            result: result[0]
-        }); // 5
+        res.json({ message: "result", result: result[0] });
     } catch (err) {
         console.log("에러 발생!(게시글 업로드)");
         res.status(500).send("Server Error");
     }
-})
-
-
-
+});
 
 router.get("/list", async (req, res) => {
     try {
-        let { type } = req.query; // 예: /list?type=real
-        // let type = "";
+        let { type } = req.query;
+        let sql = "SELECT P.POST_ID, P.USER_EMAIL, NICK_NAME, POST_TITLE, POST_TYPE, POST_CONTENT, P.CDATE_TIME, UDATE_TIME, POST_IMG_ID, IMG_NAME, IMG_PATH, THUMBNAIL_YN " +
+            "FROM pro_posts P " +
+            "LEFT JOIN pro_posts_img I ON P.POST_ID = I.POST_ID " +
+            "LEFT JOIN pro_users U ON P.USER_EMAIL = U.USER_EMAIL " +
+            "WHERE 1=1 ";
 
-        let sql = "SELECT P.POST_ID, P.USER_EMAIL, NICK_NAME, POST_TITLE, POST_TYPE, POST_CONTENT, P.CDATE_TIME, UDATE_TIME, POST_IMG_ID, IMG_NAME, IMG_PATH, THUMBNAIL_YN "
-            + "FROM pro_posts P "
-            + "LEFT JOIN pro_posts_img I ON P.POST_ID = I.POST_ID "
-            + "LEFT JOIN pro_users U ON P.USER_EMAIL = U.USER_EMAIL "
-            + "WHERE 1=1 ";
-
-        // ✅ type 값이 있을 경우에만 조건 추가
-        if (type) {
-            sql += "AND POST_TYPE = ? ";
-        }
-
+        if (type) sql += "AND POST_TYPE = ? ";
         sql += "AND (THUMBNAIL_YN = 'Y' OR THUMBNAIL_YN IS NULL) ";
         sql += "ORDER BY P.POST_ID DESC";
 
-        // ✅ 조건값이 있는 경우만 ? 자리에 값을 넣어 전달
-        let [list] = type
-            ? await db.query(sql, [type])
-            : await db.query(sql);
-
-        res.json({
-            message: "result",
-            list: list
-        });
+        let [list] = type ? await db.query(sql, [type]) : await db.query(sql);
+        res.json({ message: "result", list: list });
 
     } catch (err) {
         console.log("에러 발생!(피드리스트)");
@@ -96,15 +70,12 @@ router.get("/list", async (req, res) => {
     }
 });
 
-
-
 router.get("/:POST_ID", async (req, res) => {
     let { POST_ID } = req.params;
     try {
         let sql = "SELECT * FROM PRO_POSTS WHERE POST_ID = " + POST_ID;
         let imgSql = "SELECT * FROM PRO_POSTS_IMG WHERE POST_ID = " + POST_ID;
-        let commSql =
-            "SELECT COMMENT_ID, POST_ID, C.USER_EMAIL, CONTENT, USER_NAME, NICK_NAME, PROFILE_IMG, C.CDATE_TIME, PARENT_ID " +
+        let commSql = "SELECT COMMENT_ID, POST_ID, C.USER_EMAIL, CONTENT, USER_NAME, NICK_NAME, PROFILE_IMG, C.CDATE_TIME, PARENT_ID " +
             "FROM pro_comment C " +
             "INNER JOIN pro_users U ON C.USER_EMAIL = U.USER_EMAIL " +
             "WHERE POST_ID = " + POST_ID +
@@ -112,69 +83,134 @@ router.get("/:POST_ID", async (req, res) => {
         let [list] = await db.query(sql);
         let [imgList] = await db.query(imgSql);
         let [commList] = await db.query(commSql);
-        res.json({
-            message: "result",
-            feed: list[0],
-            imgList: imgList,
-            commList: commList
-        });
+        res.json({ message: "result", feed: list[0], imgList: imgList, commList: commList });
     } catch (err) {
         console.log("에러 발생!(그림,글)");
         res.status(500).send("Server Error");
     }
-})
+});
 
-// 댓글 등록
-router.post("/comment", async (req, res) => {
-    let { postId, email, comment, parentId } = req.body;
-
+// ✅ 게시글 이미지 목록 조회 API 추가
+router.get("/:POST_ID/images", async (req, res) => {
+    const { POST_ID } = req.params;
     try {
-        let query =
-            "INSERT INTO pro_comment " +
-            "(POST_ID, USER_EMAIL, CONTENT, CDATE_TIME, PARENT_ID) " +
-            "VALUES (?, ?, ?, NOW(), ?)";
-
-        let result = await db.query(query, [
-            postId,
-            email,
-            comment,
-            parentId || null // 대댓글이 아니면 null로 처리
-        ]);
-
-        res.json({
-            message: "댓글이 작성되었습니다.",
-            result: result[0]
-        });
-
+        const [rows] = await db.query("SELECT IMG_NAME, IMG_PATH, POST_IMG_ID FROM PRO_POSTS_IMG WHERE POST_ID = ?", [POST_ID]);
+        res.json({ images: rows });
     } catch (err) {
-        console.log("에러 발생!(댓글 하기)", err);
+        console.error("이미지 불러오기 에러:", err.message);
         res.status(500).send("Server Error");
     }
 });
 
-// 게시글 삭제
-router.delete('/:id', async (req, res) => {
-  const { id } = req.params;
-  console.log('포스트 넘버',id);
+// ✅ 게시글 이미지 삭제 API 추가
+router.delete("/image/:imgId", async (req, res) => {
+    const { imgId } = req.params;
 
-  try {
-    // 1. 게시글 이미지 삭제 (선택사항: 실제 파일 삭제는 별도로 구현 가능)
-    await db.query('DELETE FROM PRO_POSTS_IMG WHERE POST_ID = ?', [id]);
+    try {
+        // 1. 삭제 대상 이미지 정보 조회
+        const [[imgInfo]] = await db.query("SELECT POST_ID, THUMBNAIL_YN FROM PRO_POSTS_IMG WHERE POST_IMG_ID = ?", [imgId]);
 
-    // 2. 게시글 자체 삭제
-    const [result] = await db.query('DELETE FROM PRO_POSTS WHERE POST_ID = ?', [id]);
+        if (!imgInfo) {
+            return res.status(404).json({ message: "이미지를 찾을 수 없습니다." });
+        }
 
-    if (result.affectedRows > 0) {
-      res.json({ success: true, message: '게시글이 삭제되었습니다.' });
-    } else {
-      res.json({ success: false, message: '삭제할 게시글을 찾을 수 없습니다.' });
+        const postId = imgInfo.POST_ID;
+        const wasThumbnail = imgInfo.THUMBNAIL_YN === 'Y';
+
+        // 2. 이미지 삭제
+        await db.query("DELETE FROM PRO_POSTS_IMG WHERE POST_IMG_ID = ?", [imgId]);
+
+        // 3. 삭제된 이미지가 썸네일이라면, 남은 이미지 중 하나를 썸네일로 지정
+        if (wasThumbnail) {
+            const [[nextImg]] = await db.query(
+                "SELECT POST_IMG_ID FROM PRO_POSTS_IMG WHERE POST_ID = ? ORDER BY POST_IMG_ID ASC LIMIT 1",
+                [postId]
+            );
+
+            if (nextImg) {
+                await db.query("UPDATE PRO_POSTS_IMG SET THUMBNAIL_YN = 'Y' WHERE POST_IMG_ID = ?", [nextImg.POST_IMG_ID]);
+            }
+        }
+
+        res.json({ success: true, message: "이미지 삭제 완료" });
+
+    } catch (err) {
+        console.error("이미지 삭제 에러:", err.message);
+        res.status(500).send("Server Error");
     }
-  } catch (err) {
-    console.error('게시글 삭제 오류:', err.message);
-    res.status(500).send('Server Error');
-  }
+});
+
+router.post("/comment", async (req, res) => {
+    let { postId, email, comment, parentId } = req.body;
+    try {
+        let query = "INSERT INTO pro_comment (POST_ID, USER_EMAIL, CONTENT, CDATE_TIME, PARENT_ID) VALUES (?, ?, ?, NOW(), ?)";
+        let result = await db.query(query, [postId, email, comment, parentId || null]);
+        res.json({ message: "댓글이 작성되었습니다.", result: result[0] });
+    } catch (err) {
+        console.log("에러 발생!(댓글 확인)", err);
+        res.status(500).send("Server Error");
+    }
+});
+
+router.delete("/comment/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+        // 최상위 댓글 + 대댓글 모두 삭제
+        const [result] = await db.query(
+            "DELETE FROM pro_comment WHERE COMMENT_ID = ? OR PARENT_ID = ?",
+            [id, id]
+        );
+
+        res.json({ success: true, message: "댓글 및 대댓글이 삭제되었습니다.", result });
+    } catch (err) {
+        console.error("댓글 삭제 오류:", err.message);
+        res.status(500).send("Server Error");
+    }
 });
 
 
+router.delete('/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM PRO_POSTS_IMG WHERE POST_ID = ?", [id]);
+        const [result] = await db.query("DELETE FROM PRO_POSTS WHERE POST_ID = ?", [id]);
+        if (result.affectedRows > 0) {
+            res.json({ success: true, message: '게시글이 삭제되었습니다.' });
+        } else {
+            res.json({ success: false, message: '삭제할 게시글을 찾을 수 없습니다.' });
+        }
+    } catch (err) {
+        console.error('게시글 삭제 오류:', err.message);
+        res.status(500).send('Server Error');
+    }
+});
 
-module.exports = router
+router.put("/:id", async (req, res) => {
+    const { id } = req.params;
+    const { title, content, type } = req.body;
+    try {
+        let query = "UPDATE PRO_POSTS SET POST_TITLE = ?, POST_CONTENT = ?, POST_TYPE = ?, UDATE_TIME = NOW() WHERE POST_ID = ?";
+        let [result] = await db.query(query, [title, content, type, id]);
+        res.json({ message: "게시글이 수정되었습니다.", result });
+    } catch (err) {
+        console.error("게시글 수정 에러:", err.message);
+        res.status(500).send("Server Error");
+    }
+});
+
+router.put("/comment/:id", async (req, res) => {
+    const { id } = req.params;
+    const { content } = req.body;
+    try {
+        const [result] = await db.query(
+            "UPDATE pro_comment SET CONTENT = ?, CDATE_TIME = NOW() WHERE COMMENT_ID = ?",
+            [content, id]
+        );
+        res.json({ success: true, message: "댓글 수정 완료", result });
+    } catch (err) {
+        console.error("댓글 수정 오류:", err.message);
+        res.status(500).send("Server Error");
+    }
+});
+
+module.exports = router;
