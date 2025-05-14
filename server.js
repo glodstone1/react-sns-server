@@ -6,6 +6,9 @@ const snsFeed = require('./routes/sns/feed')
 const proUserRouter = require('./routes/snsProject/pro-user')
 const proFeedRouter = require('./routes/snsProject/pro-feed')
 const proLikeRouter = require('./routes/snsProject/pro-like')
+const proFollowRouter = require('./routes/snsProject/pro-follow')
+const proNotificationRouter = require('./routes/snsProject/pro-notification')
+
 const path = require('path');
 
 // 추가 1. 서버 종료 후 npm i cors 로 패키지 설치
@@ -36,9 +39,8 @@ app.use("/sns-feed", snsFeed);
 app.use("/pro-user", proUserRouter);
 app.use("/pro-feed", proFeedRouter);
 app.use("/pro-like", proLikeRouter);
-
-
-
+app.use("/pro-follow", proFollowRouter);
+app.use("/pro-notification", proNotificationRouter);
 
 
 app.listen(3005, () => {

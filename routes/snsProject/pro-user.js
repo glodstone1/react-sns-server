@@ -46,25 +46,71 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.get("/follow-list", authMiddleware, async (req, res) => {
+  const { type = "following", email, keyword = "" } = req.query;
+  const userEmail = email || req.user.email;
+  const likeKeyword = `%${keyword}%`;
+
+  const isFollowing = type === "following";
+
+  const joinColumn = isFollowing ? "F.FOLLOWED_EMAIL" : "F.FOLLOWING_EMAIL";
+  const whereColumn = isFollowing ? "F.FOLLOWING_EMAIL" : "F.FOLLOWED_EMAIL";
+
+  const query =
+    "SELECT U.USER_EMAIL, U.NICK_NAME, U.PROFILE_IMG " +
+    "FROM PRO_USERS U " +
+    `JOIN PRO_FOLLOW F ON U.USER_EMAIL = ${joinColumn} ` +
+    `WHERE ${whereColumn} = ? ` +
+    "AND F.CANCEL_YN = 'N' " +
+    "AND (U.NICK_NAME LIKE ? OR U.USER_EMAIL LIKE ?) " +
+    "ORDER BY U.NICK_NAME ASC";
+
+  try {
+    const [rows] = await db.query(query, [userEmail, likeKeyword, likeKeyword]);
+    res.json(rows);
+  } catch (err) {
+    console.error("팔로우/팔로워 조회 실패:", err);
+    res.status(500).send("팔로우 목록 조회 실패");
+  }
+});
+
 // ✅ 추천 유저 조회
 router.get("/suggested-users", authMiddleware, async (req, res) => {
   const userEmail = req.user.email;
-  const query = `
-    SELECT USER_EMAIL, NICK_NAME, PROFILE_IMG
-    FROM PRO_USERS
-    WHERE USER_EMAIL != ?
-      AND USER_EMAIL NOT IN (
-        SELECT FOLLOWING_EMAIL FROM PRO_FOLLOW WHERE FOLLOWED_EMAIL = ?
-      )
-    ORDER BY RAND()
-    LIMIT 6
-  `;
+  const limitParam = req.query.limit || '6';
+  const keyword = req.query.keyword || '';
+
+  const baseQuery =
+    "SELECT USER_EMAIL, NICK_NAME, PROFILE_IMG " +
+    "FROM PRO_USERS " +
+    "WHERE USER_EMAIL != ? " +
+    "AND USER_EMAIL NOT IN ( " +
+      "SELECT FOLLOWED_EMAIL " +
+      "FROM PRO_FOLLOW " +
+      "WHERE FOLLOWING_EMAIL = ? AND CANCEL_YN = 'N' " +
+    ") " +
+    "AND (NICK_NAME LIKE ? OR USER_EMAIL LIKE ?)";
+
+  const limitClause =
+    (limitParam && limitParam !== 'all')
+      ? " ORDER BY RAND() LIMIT ?"
+      : " ORDER BY RAND()";
+
+  const query = baseQuery + limitClause;
+
   try {
-    const [rows] = await db.query(query, [userEmail, userEmail]);
+    const likeKeyword = `%${keyword}%`;
+    const params = [userEmail, userEmail, likeKeyword, likeKeyword];
+
+    if (limitParam !== 'all') {
+      params.push(parseInt(limitParam));
+    }
+
+    const [rows] = await db.query(query, params);
     res.json(rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).send("추천 유저 조회 실패");
+    console.error("추천 유저 검색 실패:", err);
+    res.status(500).send("추천 유저 검색 실패");
   }
 });
 
@@ -157,7 +203,6 @@ router.post("/join", async (req, res) => {
 // ✅ 마지막에 위치: 동적 라우트 (특정 유저 조회)
 router.get("/:email", async (req, res) => {
   let { email } = req.params;
-  console.log("유저맵", email);
   try {
     let [list] = await db.query("SELECT * FROM PRO_USERS WHERE USER_EMAIL = ?", [email]);
     res.json({
