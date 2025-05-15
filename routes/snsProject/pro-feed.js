@@ -141,15 +141,34 @@ router.delete("/image/:imgId", async (req, res) => {
 });
 
 router.post("/comment", async (req, res) => {
-    let { postId, email, comment, parentId } = req.body;
-    try {
-        let query = "INSERT INTO pro_comment (POST_ID, USER_EMAIL, CONTENT, CDATE_TIME, PARENT_ID) VALUES (?, ?, ?, NOW(), ?)";
-        let result = await db.query(query, [postId, email, comment, parentId || null]);
-        res.json({ message: "댓글이 작성되었습니다.", result: result[0] });
-    } catch (err) {
-        console.log("에러 발생!(댓글 확인)", err);
-        res.status(500).send("Server Error");
+  let { postId, email, comment, parentId } = req.body;
+  try {
+    let query = "INSERT INTO pro_comment (POST_ID, USER_EMAIL, CONTENT, CDATE_TIME, PARENT_ID) VALUES (?, ?, ?, NOW(), ?)";
+    let result = await db.query(query, [postId, email, comment, parentId || null]);
+
+    // ✅ 게시글 작성자 이메일 조회
+    let [postRows] = await db.query("SELECT USER_EMAIL FROM PRO_POSTS WHERE POST_ID = ?", [postId]);
+    let postOwner = postRows[0]?.USER_EMAIL;
+
+    // ✅ 댓글 작성자가 글쓴이가 아닐 경우 알림 생성
+    if (postOwner && postOwner !== email) {
+      // ✅ 닉네임 조회
+      let [senderRows] = await db.query("SELECT NICK_NAME FROM PRO_USERS WHERE USER_EMAIL = ?", [email]);
+      let senderNick = senderRows[0]?.NICK_NAME || "익명";
+
+      // ✅ sender_email까지 포함한 알림 저장
+      await db.query(
+        "INSERT INTO PRO_NOTIFICATIONS (USER_EMAIL, SENDER_EMAIL, NOTI_TYPE, MESSAGE, TARGET_ID, IS_READ_YN, CDATE_TIME) " +
+        "VALUES (?, ?, 'COMMENT', ?, ?, 'N', NOW())",
+        [postOwner, email, `${senderNick}님이 댓글을 남겼습니다.`, postId]
+      );
     }
+
+    res.json({ message: "댓글이 작성되었습니다.", result: result[0] });
+  } catch (err) {
+    console.log("에러 발생!(댓글 확인)", err);
+    res.status(500).send("Server Error");
+  }
 });
 
 router.delete("/comment/:id", async (req, res) => {
